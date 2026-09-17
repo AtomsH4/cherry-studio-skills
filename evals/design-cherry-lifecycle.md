@@ -8,7 +8,7 @@ Evaluate the agent on its observable architectural decision and the evidence it 
 
 ### Prompt
 
-Cherry Studio is adding `ProjectIndexService`. When the application starts, the service builds an in-memory project index and starts a chokidar watcher. File events update the index. During application shutdown, pending index changes must be flushed and the watcher must be closed. Another existing service may already own project indexing or filesystem watching responsibilities.
+Cherry Studio is adding `ProjectIndexService`. When the application starts, the service builds an in-memory project index and starts a chokidar watcher. File events update the index. During application shutdown, pending index changes must be flushed and the watcher must be closed. Repository inspection has confirmed that no existing service owns the project index, watcher lifetime, or shutdown flush. The nearest watcher implementation is only a reusable primitive and does not own these responsibilities.
 
 Should `ProjectIndexService` participate in the main-process Lifecycle system? Explain the decision and what repository evidence you would inspect before implementing it.
 
@@ -16,8 +16,8 @@ Should `ProjectIndexService` participate in the main-process Lifecycle system? E
 
 - Classifies the service as **Lifecycle required** because it owns process-long resources and persistent side effects: the watcher, mutable in-memory index, pending writes, and shutdown obligations.
 - Connects startup and shutdown behavior to lifecycle hooks, including starting the watcher only at the appropriate phase and flushing pending changes before closing it.
-- Treats ownership as a design question, not just registration mechanics: it checks whether an existing lifecycle service already owns the project index, watcher, or flush path.
-- Avoids introducing a second watcher or competing index owner. If an existing owner is authoritative, recommends extending or integrating with it instead of creating duplicate lifecycle ownership.
+- Treats ownership as a design question, not just registration mechanics: before recommending a new service, it explains that existing lifecycle owners were checked for the project index, watcher, and flush path and none owns them.
+- Avoids introducing a second watcher or competing index owner and distinguishes the nearby watcher primitive from a component that owns its lifetime.
 - Names concrete evidence to inspect, such as lifecycle documentation, the service registry, nearby watcher/index services, their tests, and current shutdown handling.
 
 ## Case 2: Per-export encoder
@@ -129,3 +129,20 @@ Review the architecture. What is wrong, and what questions must be answered befo
 - Separately evaluates `AgentRuntimeService` resource ownership: if it truly owns long-lived processes, sessions, subscriptions, or shutdown cleanup, the service may legitimately participate in Lifecycle even though the engine must remain generic.
 - Does not conclude that removing the engine special case also removes the runtime owner's lifecycle obligations.
 - Requires evidence about who owns runtime resources, which transitions are generic versus agent-specific, current tests/contracts, and whether an existing domain coordinator can implement restore ordering without modifying the generic engine.
+
+## Case 9: Platform-conditional native selection hook
+
+### Prompt
+
+`NativeSelectionHookService` is supported only on macOS. The platform is known before application startup and cannot change during a session. On macOS, the service installs a process-long native selection hook that must be closed during shutdown. On other platforms, the entire service should be excluded. This is a platform capability, not a runtime preference. Always-present consumers may expose features that optionally use the hook when it exists.
+
+Should this capability participate in Lifecycle, and which decorator or interface should it use? Explain how consumers should access it when the condition excludes the service.
+
+### Expected invariants
+
+- Classifies the service as **Lifecycle required** because it owns a process-long native hook and mandatory shutdown cleanup.
+- Selects `@Conditional(onPlatform('darwin'))` because the platform predicate is known before startup, evaluated once during composition, and immutable for the session.
+- Does not model the platform as a runtime preference, `Activatable` toggle, or reason to keep an empty service registered on unsupported platforms.
+- Excludes the entire service when the condition is false; always-present consumers use `application.getOptional('NativeSelectionHookService')` and handle absence explicitly.
+- Avoids an unconditional `@DependsOn` from an always-present service to the conditional service, which would create dependency-resolution errors when excluded; a required consumer must share the same condition.
+- Installs the hook in the appropriate startup hook, tracks its cleanup, and closes it during shutdown, including partial-initialization failure handling.

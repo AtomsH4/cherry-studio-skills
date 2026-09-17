@@ -74,9 +74,9 @@ Choose only capabilities supported by observed transitions.
 | Shape | Minimum justification |
 | --- | --- |
 | Ordinary `BaseService` | The service owns a surviving resource or persistent effect that must start and stop with the application. |
-| `@Conditional` | The service itself should not exist unless a current configuration or runtime capability enables it; a conditional resource inside an otherwise required owner is not enough. |
-| `Activatable` | Heavy or externally connected resources must be acquired on demand and fully released when inactive while the service and its command surface remain registered. |
-| `Pausable` | A real pause/resume transition must preserve identity or queued state while suspending work; stop/start is observably different or incorrect. |
+| `@Conditional` | A platform, architecture, or environment condition is known before startup, evaluated once during composition, and immutable for the session; when false, it excludes the entire service. Do not use it for a runtime preference or toggle. |
+| `Activatable` | Any repeatable runtime toggle, even for a lightweight resource, or an on-demand heavy resource requires acquire/release while the service and its IPC surface remain resident. Acquire resources in activation and fully release them in deactivation. |
+| `Pausable` | Execution must stop temporarily while preserving the same service instance and its owned resources for resume; define admission and drain behavior without reconstructing or deactivating the service. |
 
 Do not add optional interfaces for transitions the capability does not have. Empty hooks are evidence that the chosen lifecycle shape may be too large.
 
